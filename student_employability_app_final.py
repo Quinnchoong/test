@@ -8,176 +8,99 @@ Original file is located at
 """
 
 # advanced_employability_app_final.py
+# app.py — Final Streamlit App
 
 import streamlit as st
 import pandas as pd
+import joblib
 import numpy as np
-import pickle
-from datetime import datetime
-import base64
-import matplotlib.pyplot as plt
 
 # --- Load Model & Scaler ---
-# Load trained SVM model
-with open("svm_model.pkl", "rb") as f:
-    model = pickle.load(f)
+try:
+    model = joblib.load('employability_predictor.pkl')
+    scaler = joblib.load('scaler.pkl')
+    st.success("✅ Model and Scaler loaded successfully!")
+except FileNotFoundError:
+    st.error("❌ Model or Scaler file not found. Please check the files.")
+    st.stop()
 
-# Load scaler used in training
-with open("scaler.pkl", "rb") as f:
-    scaler = pickle.load(f)
+# --- Feature Columns ---
+feature_columns = [
+    'GENDER', 'GENERAL_APPEARANCE', 'GENERAL_POINT_AVERAGE',
+    'MANNER_OF_SPEAKING', 'PHYSICAL_CONDITION', 'MENTAL_ALERTNESS',
+    'SELF-CONFIDENCE', 'ABILITY_TO_PRESENT_IDEAS', 'COMMUNICATION_SKILLS',
+    'STUDENT_PERFORMANCE_RATING', 'NO_SKILLS', 'Year_of_Graduate'
+]
 
-# --- Utility Functions ---
+# --- Title ---
+st.title("🎓 Student Employability Prediction")
+st.markdown("Predict whether a student is employable based on their attributes.")
 
-def generate_pdf_report(data, result, confidence):
-    """
-    Create and save a PDF report summarizing the prediction.
-    """
-    from fpdf import FPDF
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
+# --- Single Prediction ---
+st.header("🔍 Single Student Prediction")
 
-    pdf.cell(200, 10, txt="Employability Prediction Report", ln=True, align="C")
-    pdf.ln(10)
+col1, col2 = st.columns(2)
+input_values = {}
 
-    for k, v in data.items():
-        pdf.cell(200, 10, txt=f"{k}: {v}", ln=True)
+with col1:
+    input_values['GENDER'] = st.radio("Gender", [0,1], format_func=lambda x: "Female" if x==0 else "Male", index=1)
+    input_values['GENERAL_APPEARANCE'] = st.slider("General Appearance (1-5)", 1,5,3)
+    input_values['GENERAL_POINT_AVERAGE'] = st.number_input("GPA (0.0-4.0)", 0.0,4.0,3.0,0.01)
+    input_values['MANNER_OF_SPEAKING'] = st.slider("Manner of Speaking (1-5)", 1,5,3)
+    input_values['PHYSICAL_CONDITION'] = st.slider("Physical Condition (1-5)", 1,5,3)
+    input_values['MENTAL_ALERTNESS'] = st.slider("Mental Alertness (1-5)", 1,5,3)
 
-    pdf.ln(5)
-    pdf.cell(200, 10, txt=f"Prediction: {result}", ln=True)
-    pdf.cell(200, 10, txt=f"Confidence: {confidence:.2f}", ln=True)
+with col2:
+    input_values['SELF-CONFIDENCE'] = st.slider("Self-Confidence (1-5)", 1,5,3)
+    input_values['ABILITY_TO_PRESENT_IDEAS'] = st.slider("Ability to Present Ideas (1-5)", 1,5,3)
+    input_values['COMMUNICATION_SKILLS'] = st.slider("Communication Skills (1-5)", 1,5,3)
+    input_values['STUDENT_PERFORMANCE_RATING'] = st.slider("Student Performance Rating (1-5)", 1,5,3)
+    input_values['NO_SKILLS'] = st.radio("Has No Skills?", [0,1], format_func=lambda x: "No" if x==0 else "Yes", index=0)
+    input_values['Year_of_Graduate'] = st.number_input("Year of Graduation (2019-2025)", 2019,2025,2022)
 
-    file_path = "prediction_report.pdf"
-    pdf.output(file_path)
-    return file_path
+input_df = pd.DataFrame([input_values])[feature_columns]
+scaled_input = scaler.transform(input_df)
 
-def get_pdf_download_link(file_path):
-    """
-    Generate a download link for the PDF report.
-    """
-    with open(file_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    href = f'<a href="data:application/octet-stream;base64,{b64}" download="prediction_report.pdf">📄 Download PDF Report</a>'
-    return href
+if st.button("🎯 Predict"):
+    prediction = model.predict(scaled_input)
+    proba = model.predict_proba(scaled_input)
 
-
-# --- Streamlit App Setup ---
-st.set_page_config(
-    page_title="Graduate Employability Prediction",
-    page_icon="🎓",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# --- Sidebar Content ---
-st.sidebar.image(
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/UNESCO_logo.svg/2560px-UNESCO_logo.svg.png",
-    width=200
-)
-
-st.sidebar.title("About This App")
-st.sidebar.markdown("""
-This app predicts **graduate employability** based on academic and experiential attributes:
-- GPA
-- Internship
-- Mock Interview
-- Soft Skills
-- Extracurricular
-
-Uses a trained **Support Vector Machine (SVM)** model optimised with SMOTE.
-Outputs: Prediction, confidence, feature insights, downloadable PDF report.
-
----
-Developed for MSc Capstone Project.
-""")
-
-st.sidebar.info("Version: 2.0 | Last Updated: 2025-07-06")
-
-# --- Main Header ---
-st.title("🎓 Advanced Graduate Employability Dashboard")
-st.subheader("Empowering HEIs with actionable, data-driven insights.")
-
-# --- Tabs for Navigation ---
-tab1, tab2, tab3 = st.tabs(["📋 Input Form", "📊 Feature Insights", "📄 Report"])
-
-# ---------------- Tab 1: Input Form ----------------
-with tab1:
-    st.header("📋 Student Profile Input")
-
-    with st.form("input_form", clear_on_submit=False):
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            gpa = st.number_input("GPA (0–4.0)", 0.0, 4.0, value=3.0, step=0.01)
-            soft_skills = st.slider("Soft Skills (0–100)", 0, 100, 75)
-
-        with col2:
-            internship = st.slider("Internship (0–100)", 0, 100, 80)
-            extracurricular = st.slider("Extracurricular (0–100)", 0, 100, 60)
-
-        with col3:
-            mock_interview = st.slider("Mock Interview (0–100)", 0, 100, 70)
-
-        submitted = st.form_submit_button("🔮 Predict")
-
-    # Prediction logic after submission
-    if submitted:
-        # Collect inputs & scale
-        input_data = np.array([[gpa, internship, mock_interview, soft_skills, extracurricular]])
-        input_scaled = scaler.transform(input_data)
-
-        # Model prediction
-        prediction = model.predict(input_scaled)[0]
-        confidence = abs(model.decision_function(input_scaled)[0])
-
-        # Result interpretation
-        result = "✅ Employable" if prediction == 1 else "⚠️ At Risk"
-        color = "green" if prediction == 1 else "red"
-
-        # Store results in session state for use in other tabs
-        st.session_state['data'] = {
-            "GPA": gpa,
-            "Internship": internship,
-            "Mock Interview": mock_interview,
-            "Soft Skills": soft_skills,
-            "Extracurricular": extracurricular
-        }
-        st.session_state['result'] = result
-        st.session_state['confidence'] = confidence
-
-        # Display results
-        st.markdown("---")
-        st.metric(label="Prediction", value=f"{result}", delta=f"Confidence: {confidence:.2f}")
-
-# ---------------- Tab 2: Feature Insights ----------------
-with tab2:
-    st.header("📊 Feature Contribution")
-
-    if 'data' in st.session_state:
-        df = pd.DataFrame([st.session_state['data']])
-        # Horizontal bar chart of features
-        df.T.plot(kind="barh", legend=False, figsize=(6, 3), color='skyblue')
-        plt.xlabel("Feature Value")
-        st.pyplot(plt.gcf())
-        plt.clf()
+    if prediction[0] == 1:
+        st.success(f"🎉 Employable! (Probability: {proba[0][1]*100:.2f}%)")
     else:
-        st.info("Please submit a prediction first on the 📋 Input Form tab.")
+        st.warning(f"⚠️ Less Employable. (Probability: {proba[0][0]*100:.2f}%)")
 
-# ---------------- Tab 3: Report ----------------
-with tab3:
-    st.header("📄 Downloadable Prediction Report")
+        st.markdown("### 📌 Suggested Improvements:")
+        st.write("- Improve GPA and Technical Skills.")
+        st.write("- Work on soft skills: Communication, Self-Confidence.")
+        st.write("- Enhance presentation and mental alertness.")
 
-    if 'result' in st.session_state:
-        pdf_path = generate_pdf_report(
-            st.session_state['data'],
-            st.session_state['result'],
-            st.session_state['confidence']
-        )
-        st.markdown(get_pdf_download_link(pdf_path), unsafe_allow_html=True)
+# --- Batch Prediction ---
+st.header("📁 Batch Prediction (CSV Upload)")
+st.markdown("Upload a CSV file with the same columns as expected.")
 
-    else:
-        st.info("Please submit a prediction first on the 📋 Input Form tab.")
+uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+
+if uploaded_file:
+    batch_df = pd.read_csv(uploaded_file)
+    try:
+        batch_scaled = scaler.transform(batch_df[feature_columns])
+        batch_pred = model.predict(batch_scaled)
+        batch_proba = model.predict_proba(batch_scaled)
+
+        batch_df['Prediction'] = np.where(batch_pred==1, 'Employable', 'Less Employable')
+        batch_df['Employable (%)'] = (batch_proba[:,1]*100).round(2)
+        batch_df['Less Employable (%)'] = (batch_proba[:,0]*100).round(2)
+
+        st.write("### 📋 Prediction Results:")
+        st.dataframe(batch_df)
+
+        csv = batch_df.to_csv(index=False).encode('utf-8')
+        st.download_button("⬇️ Download Results as CSV", data=csv, file_name="prediction_results.csv")
+
+    except Exception as e:
+        st.error(f"❌ Error processing file: {e}")
 
 # --- Footer ---
 st.markdown("---")
-st.caption("© 2025 Your Name / Your University | Graduate Employability Prediction App | For research purposes only.")
+st.caption("© 2025 CHOONG MUH IN | Employability Predictor | Powered by SVM")
